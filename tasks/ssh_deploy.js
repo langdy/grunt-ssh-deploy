@@ -42,6 +42,7 @@ module.exports = function(grunt) {
         var done = this.async();
         var Connection = require('ssh2');
         var client = require('scp2');
+        var rsync = require('rsyncwrapper');
         var moment = require('moment');
         var timestamp = moment().format('YYYYMMDDHHmmssSSS');
         var async = require('async');
@@ -188,6 +189,27 @@ module.exports = function(grunt) {
             };
 
             var scpBuild = function(callback) {
+              if (options.rsync === true) {
+                var dest = options.username + '@' + options.host + ':' + releasePath;
+                var rsync_options = {
+                  src: options.local_path,
+                  dest: dest,
+                  ssh: true,
+                  recursive: true,
+                  exclude: options.exclude
+                }
+                grunt.log.subhead('--------------- UPLOADING NEW BUILD WITH RSYNC');
+                grunt.log.debug('RSYNC FROM LOCAL: ' + options.local_path
+                    + '\n TO REMOTE: ' + dest);
+                rsync(rsync_options, function (err) {
+                    if (err) {
+                        grunt.log.errorlns(err);
+                    } else {
+                        grunt.log.subhead('--- DONE UPLOADING WITH RSYNC');
+                        callback();
+                    }
+                })
+              } else {
                 var build = (options.zip_deploy) ? 'deploy.tgz' : options.local_path;
                 grunt.log.subhead('--------------- UPLOADING NEW BUILD');
                 grunt.log.debug('SCP FROM LOCAL: ' + build
@@ -202,6 +224,7 @@ module.exports = function(grunt) {
                         callback();
                     }
                 });
+              }
             };
 
             var unzipOnRemote = function(callback) {
