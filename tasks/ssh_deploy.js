@@ -116,7 +116,7 @@ module.exports = function(grunt) {
           connWrapper(options.host, options);
         }
 
-        var connWrapper = function(host, options) {
+        function connWrapper(host, options) {
             var c = new Connection();
             c.on('connect', function() {
                 grunt.log.subhead('Connecting :: ' + options.host);
