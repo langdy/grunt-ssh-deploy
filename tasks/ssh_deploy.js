@@ -242,7 +242,7 @@ module.exports = function(grunt) {
                     scpBuild(callback);
                 }
 
-                var scpBuild = function(callback) {
+                function scpBuild(callback) {
                     var build = (options.zip_deploy) ? 'deploy.tgz' : options.local_path;
                     grunt.log.subhead('--------------- UPLOADING NEW BUILD');
                     grunt.log.debug('SCP FROM LOCAL: ' + build
@@ -259,7 +259,7 @@ module.exports = function(grunt) {
                     });
                 };
 
-                var rsyncBuild = function(callback) {
+                function rsyncBuild(callback) {
                     var dest = options.username + '@' + options.host + ':' + releasePath;
                     var rsync_options = {
                         src: options.local_path,
