@@ -41,7 +41,7 @@ module.exports = function(grunt) {
     grunt.registerTask('ssh_deploy', 'Begin Deployment', function() {
         var done = this.async();
         var Connection = require('ssh2');
-        var client = require('scp2');
+        var scpClient = require('scp2');
         var rsync = require('rsyncwrapper');
         var moment = require('moment');
         var timestamp = moment().format('YYYYMMDDHHmmssSSS');
@@ -72,8 +72,15 @@ module.exports = function(grunt) {
 
         var releasePath = path.posix.join(options.deploy_path, options.release_root, options.release_subdir, releaseTag);
 
-        // scp defaults
-        client.defaults(getScpOptions(options));
+        if (!options.rsync) {
+            // scp defaults
+            scpClient.defaults(getScpOptions(options));
+        }
+
+        var privateKey_path = options.privateKey;
+        if (typeof privateKey_path !== 'undefined') {
+          options.privateKey = require('fs').readFileSync(privateKey_path);
+        }
 
         var c = new Connection();
         c.on('connect', function() {
@@ -94,7 +101,47 @@ module.exports = function(grunt) {
 
             return true;
         });
-        c.connect(options);
+
+        grunt.log.subhead('DEPLOYING TARGET :: ' + options.host);
+
+        if (typeof options.host === 'Array') {
+          grunt.log.debug('CLUSTER MODE');
+
+          var i = 0;
+          while(i<options.host.length) {
+            connWrapper(options.host[i], options);
+          }
+        } else {
+          grunt.log.debug('SINGLE MODE');
+          connWrapper(options.host, options);
+        }
+
+        var connWrapper = function(host, options) {
+            var c = new Connection();
+            c.on('connect', function() {
+                grunt.log.subhead('Connecting :: ' + options.host);
+            });
+            c.on('ready', function() {
+                grunt.log.subhead('Connected :: ' + options.host);
+                // execution of tasks
+                execCommands(options,c);
+            });
+            c.on('error', function(err) {
+                grunt.log.subhead("Error :: " + options.host);
+                grunt.log.errorlns(err);
+                if (err) {throw err;}
+            });
+            c.on('close', function(had_error) {
+                grunt.log.subhead("Closed :: " + options.host);
+
+                return true;
+            });
+
+            var host_specified_options = options;
+            host_specified_options.host = host;
+
+            c.connect(host_specified_options);
+        }
 
         var execCommands = function(options, connection){
             var execLocal = function(cmd, next) {
@@ -188,44 +235,54 @@ module.exports = function(grunt) {
                 execRemote(command, options.debug, callback);
             };
 
-            var scpBuild = function(callback) {
-              if (options.rsync === true) {
-                var dest = options.username + '@' + options.host + ':' + releasePath;
-                var rsync_options = {
-                  src: options.local_path,
-                  dest: dest,
-                  ssh: true,
-                  recursive: true,
-                  exclude: options.exclude
+            var build = function(callback) {
+                if (options.rsync) {
+                    rsyncBuild(callback);
+                } else {
+                    scpBuild(callback);
                 }
-                grunt.log.subhead('--------------- UPLOADING NEW BUILD WITH RSYNC');
-                grunt.log.debug('RSYNC FROM LOCAL: ' + options.local_path
-                    + '\n TO REMOTE: ' + dest);
-                rsync(rsync_options, function (err) {
-                    if (err) {
-                        grunt.log.errorlns(err);
-                    } else {
-                        grunt.log.subhead('--- DONE UPLOADING WITH RSYNC');
-                        callback();
+
+                var scpBuild = function(callback) {
+                    var build = (options.zip_deploy) ? 'deploy.tgz' : options.local_path;
+                    grunt.log.subhead('--------------- UPLOADING NEW BUILD');
+                    grunt.log.debug('SCP FROM LOCAL: ' + build
+                        + '\n TO REMOTE: ' + releasePath);
+                    scpClient.scp(build, {
+                        path: releasePath
+                    }, function (err) {
+                        if (err) {
+                            grunt.log.errorlns(err);
+                        } else {
+                            grunt.log.subhead('--- DONE UPLOADING');
+                            callback();
+                        }
+                    });
+                };
+
+                var rsyncBuild = function(callback) {
+                    var dest = options.username + '@' + options.host + ':' + releasePath;
+                    var rsync_options = {
+                        src: options.local_path,
+                        dest: dest,
+                        ssh: true,
+                        privateKey: privateKey_path,
+                        recursive: true,
+                        exclude: options.exclude
                     }
-                })
-              } else {
-                var build = (options.zip_deploy) ? 'deploy.tgz' : options.local_path;
-                grunt.log.subhead('--------------- UPLOADING NEW BUILD');
-                grunt.log.debug('SCP FROM LOCAL: ' + build
-                    + '\n TO REMOTE: ' + releasePath);
-                client.scp(build, {
-                    path: releasePath
-                }, function (err) {
-                    if (err) {
-                        grunt.log.errorlns(err);
-                    } else {
-                        grunt.log.subhead('--- DONE UPLOADING');
-                        callback();
-                    }
-                });
-              }
-            };
+                    grunt.log.subhead('--------------- UPLOADING NEW BUILD WITH RSYNC');
+                    grunt.log.debug('RSYNC FROM LOCAL: ' + options.local_path
+                        + '\n TO REMOTE: ' + dest);
+                    rsync(rsync_options, function (err) {
+                        if (err) {
+                            grunt.log.errorlns(err);
+                        } else {
+                            grunt.log.subhead('--- DONE UPLOADING WITH RSYNC');
+                            callback();
+                        }
+                    });
+                };
+            }
+
 
             var unzipOnRemote = function(callback) {
                 if (!options.zip_deploy) return callback();
@@ -291,9 +348,9 @@ module.exports = function(grunt) {
             var closeConnection = function(callback) {
                 connection.end();
 
-                client.close();
-                client.__sftp = null;
-                client.__ssh = null;
+                scpClient.close();
+                scpClient.__sftp = null;
+                scpClient.__ssh = null;
 
                 callback();
             };
@@ -302,7 +359,7 @@ module.exports = function(grunt) {
                 onBeforeDeploy,
                 zipForDeploy,
                 createReleases,
-                scpBuild,
+                build,
                 unzipOnRemote,
                 updateSymlink,
                 onAfterDeploy,
