@@ -104,41 +104,48 @@ module.exports = function(grunt) {
 
         grunt.log.subhead('DEPLOYING TARGET :: ' + options.host);
 
-        if (typeof options.host === 'Array') {
-          grunt.log.debug('CLUSTER MODE');
+        var doneLimit;
+        var doneCount = 0;
+
+        if (typeof options.host === 'object') {
+          grunt.log.subhead('CLUSTER MODE');
+
+          doneLimit = options.host.length;
 
           var i = 0;
           while(i<options.host.length) {
             connWrapper(options.host[i], options);
+            i++;
           }
         } else {
-          grunt.log.debug('SINGLE MODE');
+          doneLimit = 1;
+          grunt.log.subhead('SINGLE MODE');
           connWrapper(options.host, options);
         }
 
         function connWrapper(host, options) {
+            var host_specified_options = Object.assign({}, options);
+            host_specified_options.host = host;
+
             var c = new Connection();
             c.on('connect', function() {
-                grunt.log.subhead('Connecting :: ' + options.host);
+                grunt.log.subhead('Connecting :: ' + host_specified_options.host);
             });
             c.on('ready', function() {
-                grunt.log.subhead('Connected :: ' + options.host);
+                grunt.log.subhead('Connected :: ' + host_specified_options.host);
                 // execution of tasks
-                execCommands(options,c);
+                execCommands(host_specified_options,c);
             });
             c.on('error', function(err) {
-                grunt.log.subhead("Error :: " + options.host);
+                grunt.log.subhead("Error :: " + host_specified_options.host);
                 grunt.log.errorlns(err);
                 if (err) {throw err;}
             });
             c.on('close', function(had_error) {
-                grunt.log.subhead("Closed :: " + options.host);
+                grunt.log.subhead("Closed :: " + host_specified_options.host);
 
                 return true;
             });
-
-            var host_specified_options = options;
-            host_specified_options.host = host;
 
             c.connect(host_specified_options);
         }
@@ -314,7 +321,7 @@ module.exports = function(grunt) {
             var onAfterDeploy = function(callback){
                 if (typeof options.after_deploy === "undefined") return callback();
                 var command = options.after_deploy;
-                grunt.log.subhead("--------------- RUNNING POST-DEPLOY COMMANDS");
+                grunt.log.subhead("--------------- RUNNING POST-DEPLOY COMMANDS ON " + options.host);
                 if (command instanceof Array) {
                     async.eachSeries(command, function(command, callback) {
                         grunt.log.subhead('--- ' + command);
@@ -367,7 +374,10 @@ module.exports = function(grunt) {
                 deleteZip,
                 closeConnection
             ], function () {
-                done();
+                doneCount++;
+                if (doneLimit === doneCount) {
+                  done();
+                }
             });
         };
     });
