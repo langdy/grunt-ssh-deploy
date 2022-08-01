@@ -41,7 +41,7 @@ module.exports = function(grunt) {
     grunt.registerTask('ssh_deploy', 'Begin Deployment', function() {
         var done = this.async();
         var Connection = require('ssh2');
-        var scpClient = require('scp2');
+        var scpClient = require('node-scp');
         var rsync = require('rsyncwrapper');
         var moment = require('moment');
         var timestamp = moment().format('YYYYMMDDHHmmssSSS');
