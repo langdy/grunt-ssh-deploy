@@ -355,7 +355,10 @@ module.exports = function(grunt) {
             var closeConnection = function(callback) {
                 connection.end();
 
-                scpClient.close();
+                // scpClient.close may undefined.
+                if (scpClient.close) {
+                    scpClient.close();
+                }
                 scpClient.__sftp = null;
                 scpClient.__ssh = null;
 
